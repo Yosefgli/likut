@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>מחסן → מדף</title>
+  <style>
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+    body { margin: 0; background: #f6f7f9; color:#111; }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 16px; }
+    .card { background: #fff; border-radius: 14px; padding: 16px; box-shadow: 0 6px 18px rgba(0,0,0,.08); }
+    h1 { font-size: 20px; margin: 0 0 10px; }
+    h2 { font-size: 16px; margin: 0 0 12px; }
+    .muted { color: #666; font-size: 13px; }
+    .row { display:flex; gap:10px; align-items:center; }
+    .row > * { flex: 1; }
+    button {
+      border: 0; border-radius: 12px; padding: 14px 12px;
+      font-weight: 700; cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0,0,0,.08);
+      background:#111; color:#fff;
+    }
+    button.secondary { background:#e9ebef; color:#111; font-weight: 700; }
+    button.danger { background:#b00020; }
+    button:disabled { opacity: .6; cursor: not-allowed; }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 14px 12px;
+      border-radius: 12px;
+      border: 1px solid #d9dde5;
+      font-size: 16px;
+      outline: none;
+      background: #fff;
+    }
+    .grid10 { display:grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+    .grid10 button { background:#0b5; }
+    .hidden { display:none !important; }
+    .status { margin-top: 10px; font-size: 13px; }
+    .status.ok { color: #0a7; }
+    .status.err { color: #b00020; }
+    table { width:100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { text-align:right; padding: 10px 8px; border-bottom: 1px solid #eee; font-size: 14px; }
+    th { color:#444; font-size: 13px; }
+    .pill { display:inline-block; padding: 4px 8px; border-radius: 999px; background:#eef2ff; font-size: 12px; }
+    .topbar { display:flex; justify-content: space-between; align-items:center; gap:10px; margin-bottom: 12px; }
+    .topbar .pill { background:#fff; border:1px solid #eee; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+
+    <div class="topbar">
+      <div class="pill">מצב: <span id="modeLabel">התחלה</span></div>
+      <div class="pill">Task: <span id="taskLabel">—</span></div>
+    </div>
+
+    <!-- START -->
+    <section id="screenStart" class="card">
+      <h1>התחלת משימה</h1>
+      <p class="muted">לחץ כדי לפתוח משימה חדשה. אם יש משימה פתוחה במכשיר, נמשיך אותה אוטומטית.</p>
+
+      <div style="margin-top:12px;">
+        <label class="muted">שם מחסנאי / מכשיר (לא חובה)</label>
+        <input id="createdBy" type="text" placeholder="לדוגמה: יוסי / מחסן-1" autocomplete="off" />
+      </div>
+
+      <div class="row" style="margin-top:12px;">
+        <button id="btnStart">התחל משימה</button>
+        <button id="btnResume" class="secondary">המשך משימה קיימת</button>
+      </div>
+
+      <div id="startStatus" class="status"></div>
+    </section>
+
+    <!-- SCAN -->
+    <section id="screenScan" class="card hidden">
+      <h1>סריקה</h1>
+      <p class="muted">סרוק ברקוד עם הסורק. השדה נעול כדי לא להקפיץ מקלדת.</p>
+
+      <div class="row" style="margin-top:12px;">
+        <input id="barcode" type="text"
+               inputmode="none"
+               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+               placeholder="סרוק כאן..."
+               readonly />
+        <button id="btnManual" class="secondary" style="flex:0 0 160px;">הקלדה ידנית</button>
+      </div>
+
+      <div id="scanStatus" class="status"></div>
+
+      <!-- Qty picker -->
+      <div id="qtyPanel" class="hidden" style="margin-top:14px;">
+        <h2>בחר כמות (1–10)</h2>
+        <div id="productPreview" class="muted" style="margin-bottom:10px;"></div>
+        <div class="grid10" id="qtyGrid"></div>
+        <div class="row" style="margin-top:12px;">
+          <button id="btnCancelQty" class="secondary">ביטול</button>
+          <button id="btnFinishFromScan" class="danger">סיום</button>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:12px;">
+        <button id="btnFinish" class="danger">סיום</button>
+      </div>
+    </section>
+
+    <!-- SUMMARY -->
+    <section id="screenSummary" class="card hidden">
+      <h1>סיכום פריטים</h1>
+      <p class="muted">פה תראה את כל מה שנסרק במשימה.</p>
+
+      <div class="row" style="margin-top:12px;">
+        <button id="btnAddMore" class="secondary">הוסף מוצר</button>
+        <button id="btnDone" class="danger">סיימתי (איפוס)</button>
+      </div>
+
+      <div id="summaryStatus" class="status"></div>
+
+      <table id="summaryTable">
+        <thead>
+          <tr>
+            <th>מוצר</th>
+            <th>כמות</th>
+            <th>מדף</th>
+            <th>מחסן</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+  </div>
+
+<script>
+/** =======================
+ *  CONFIG
+ *  ======================= */
+const API_URL = "https://script.google.com/macros/s/AKfycbyuK05nXpuQj1n56AaGvEBm4tW4pCHkyolIQz3YxXpXt6nGKGQBQY5_jeLYP5fNjlA9/exec";
+
+// Local storage keys
+const LS_TASK_ID = "wh_taskId";
+const LS_CREATED_BY = "wh_createdBy";
+const LS_LAST_BARCODE = "wh_lastBarcode";
+
+/** =======================
+ *  DOM
+ *  ======================= */
+const screenStart = document.getElementById("screenStart");
+const screenScan = document.getElementById("screenScan");
+const screenSummary = document.getElementById("screenSummary");
+
+const modeLabel = document.getElementById("modeLabel");
+const taskLabel = document.getElementById("taskLabel");
+
+const createdByInput = document.getElementById("createdBy");
+const btnStart = document.getElementById("btnStart");
+const btnResume = document.getElementById("btnResume");
+const startStatus = document.getElementById("startStatus");
+
+const barcodeInput = document.getElementById("barcode");
+const btnManual = document.getElementById("btnManual");
+const scanStatus = document.getElementById("scanStatus");
+
+const qtyPanel = document.getElementById("qtyPanel");
+const qtyGrid = document.getElementById("qtyGrid");
+const productPreview = document.getElementById("productPreview");
+const btnCancelQty = document.getElementById("btnCancelQty");
+const btnFinish = document.getElementById("btnFinish");
+const btnFinishFromScan = document.getElementById("btnFinishFromScan");
+
+const btnAddMore = document.getElementById("btnAddMore");
+const btnDone = document.getElementById("btnDone");
+const summaryStatus = document.getElementById("summaryStatus");
+const summaryTableBody = document.querySelector("#summaryTable tbody");
+
+/** =======================
+ *  STATE
+ *  ======================= */
+let taskId = localStorage.getItem(LS_TASK_ID) || "";
+let pendingBarcode = "";
+let pendingProduct = null; // from server response
+
+/** =======================
+ *  UI helpers
+ *  ======================= */
+function setMode(label) {
+  modeLabel.textContent = label;
+}
+
+function setTaskLabel(id) {
+  taskLabel.textContent = id ? id.slice(0, 8) + "…" : "—";
+}
+
+function show(el) { el.classList.remove("hidden"); }
+function hide(el) { el.classList.add("hidden"); }
+
+function goStart() {
+  setMode("התחלה");
+  show(screenStart); hide(screenScan); hide(screenSummary);
+  setTaskLabel(taskId);
+  startStatus.textContent = "";
+  startStatus.className = "status";
+  createdByInput.value = localStorage.getItem(LS_CREATED_BY) || "";
+}
+
+function goScan() {
+  setMode("סריקה");
+  hide(screenStart); show(screenScan); hide(screenSummary);
+  hide(qtyPanel);
+  scanStatus.textContent = "";
+  scanStatus.className = "status";
+  setTaskLabel(taskId);
+  armScanner();
+}
+
+function goSummary() {
+  setMode("סיכום");
+  hide(screenStart); hide(screenScan); show(screenSummary);
+  summaryStatus.textContent = "";
+  summaryStatus.className = "status";
+  setTaskLabel(taskId);
+}
+
+function setStatus(el, msg, ok) {
+  el.textContent = msg || "";
+  el.className = "status " + (ok ? "ok" : "err");
+}
+
+/** =======================
+ *  Scanner input behavior
+ *  ======================= */
+function armScanner() {
+  // Keep it readonly to avoid keyboard pop
+  barcodeInput.readOnly = true;
+  barcodeInput.setAttribute("inputmode", "none");
+  barcodeInput.value = "";
+  // focus so scanner can type
+  try { barcodeInput.focus({ preventScroll: true }); } catch { barcodeInput.focus(); }
+}
+
+// Manual keyboard only on demand
+btnManual.addEventListener("click", () => {
+  barcodeInput.readOnly = false;
+  barcodeInput.setAttribute("inputmode", "numeric");
+  barcodeInput.value = "";
+  barcodeInput.focus();
+
+  // After 12s, lock again
+  setTimeout(() => {
+    barcodeInput.blur();
+    barcodeInput.readOnly = true;
+    barcodeInput.setAttribute("inputmode", "none");
+    armScanner();
+  }, 12000);
+});
+
+// Capture Enter from scanner
+barcodeInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    const code = (barcodeInput.value || "").trim();
+    if (!code) return;
+    barcodeInput.value = "";
+    onBarcodeScanned(code);
+  }
+});
+
+/** =======================
+ *  API
+ *  ======================= */
+// NOTE: Apps Script sometimes expects text/plain for JSON.
+async function apiPost(payload) {
+  const res = await fetch(API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload),
+  });
+  // If CORS blocks, you'll see a network error.
+  return res.json();
+}
+
+async function apiGet(params) {
+  const url = new URL(API_URL);
+  Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, v));
+  const res = await fetch(url.toString(), { method: "GET" });
+  return res.json();
+}
+
+/** =======================
+ *  Flow
+ *  ======================= */
+btnStart.addEventListener("click", async () => {
+  btnStart.disabled = true;
+  try {
+    const createdBy = (createdByInput.value || "").trim() || "unknown";
+    localStorage.setItem(LS_CREATED_BY, createdBy);
+
+    const data = await apiPost({ action: "startTask", createdBy });
+    if (!data.ok) throw new Error(data.error || "startTask failed");
+
+    taskId = data.taskId;
+    localStorage.setItem(LS_TASK_ID, taskId);
+    setStatus(startStatus, "משימה נפתחה ✅", true);
+    goScan();
+  } catch (err) {
+    setStatus(startStatus, "שגיאה בפתיחת משימה: " + err.message, false);
+  } finally {
+    btnStart.disabled = false;
+  }
+});
+
+btnResume.addEventListener("click", async () => {
+  // If there is a taskId in storage, just continue
+  if (!taskId) {
+    setStatus(startStatus, "אין משימה קיימת במכשיר. פתח משימה חדשה.", false);
+    return;
+  }
+  setStatus(startStatus, "ממשיך משימה קיימת ✅", true);
+  goScan();
+});
+
+async function onBarcodeScanned(code) {
+  if (!taskId) {
+    setStatus(scanStatus, "אין TaskId. חזור למסך התחלה.", false);
+    goStart();
+    return;
+  }
+
+  pendingBarcode = code;
+  localStorage.setItem(LS_LAST_BARCODE, pendingBarcode);
+  setStatus(scanStatus, "ברקוד נקלט: " + pendingBarcode + " … מחפש מוצר", true);
+
+  // We will NOT addLine yet. First show qty buttons.
+  // But we still want a product preview. We'll "probe" by calling addLine with qty=1? לא.
+  // So: simplest is to call addLine ONLY after qty selected,
+  // and show a preview as "מוכן לבחירת כמות" without product data.
+  // HOWEVER: your Apps Script currently finds product inside addLine,
+  // so preview comes after choosing qty. That's fine.
+  // We'll keep preview minimal:
+  pendingProduct = null;
+  productPreview.textContent = "ברקוד: " + pendingBarcode;
+  buildQtyButtons();
+  show(qtyPanel);
+}
+
+function buildQtyButtons() {
+  qtyGrid.innerHTML = "";
+  for (let i=1; i<=10; i++) {
+    const b = document.createElement("button");
+    b.textContent = String(i);
+    b.addEventListener("click", () => pickQty(i));
+    qtyGrid.appendChild(b);
+  }
+}
+
+btnCancelQty.addEventListener("click", () => {
+  pendingBarcode = "";
+  pendingProduct = null;
+  hide(qtyPanel);
+  setStatus(scanStatus, "בוטל. סרוק שוב.", true);
+  armScanner();
+});
+
+async function pickQty(qty) {
+  // Disable all qty buttons while saving
+  [...qtyGrid.querySelectorAll("button")].forEach(b => b.disabled = true);
+  btnCancelQty.disabled = true;
+  btnFinishFromScan.disabled = true;
+
+  try {
+    const data = await apiPost({ action: "addLine", taskId, barcode: pendingBarcode, qty });
+    if (!data.ok) throw new Error(data.error || "addLine failed");
+
+    const p = data.product || {};
+    pendingProduct = p;
+
+    setStatus(scanStatus, `נשמר ✅ ${p.name || ""} | כמות: ${qty}`, true);
+
+    // Reset to scan again
+    pendingBarcode = "";
+    pendingProduct = null;
+    hide(qtyPanel);
+    armScanner();
+  } catch (err) {
+    setStatus(scanStatus, "שגיאה בשמירה: " + err.message, false);
+    // Keep qty panel open so they can retry/cancel
+  } finally {
+    [...qtyGrid.querySelectorAll("button")].forEach(b => b.disabled = false);
+    btnCancelQty.disabled = false;
+    btnFinishFromScan.disabled = false;
+  }
+}
+
+btnFinish.addEventListener("click", async () => {
+  await openSummary();
+});
+
+btnFinishFromScan.addEventListener("click", async () => {
+  await openSummary();
+});
+
+async function openSummary() {
+  if (!taskId) { goStart(); return; }
+  try {
+    setStatus(scanStatus, "טוען סיכום…", true);
+    const data = await apiGet({ action: "getTask", taskId });
+    if (!data.ok) throw new Error(data.error || "getTask failed");
+    renderSummary(data.lines || []);
+    goSummary();
+  } catch (err) {
+    setStatus(scanStatus, "שגיאה בטעינת סיכום: " + err.message, false);
+  }
+}
+
+function renderSummary(lines) {
+  summaryTableBody.innerHTML = "";
+  if (!lines.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="4" class="muted">אין פריטים במשימה עדיין.</td>`;
+    summaryTableBody.appendChild(tr);
+    return;
+  }
+  for (const ln of lines) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(ln.productName || "")}</td>
+      <td>${escapeHtml(String(ln.qty ?? ""))}</td>
+      <td>${escapeHtml(String(ln.shelf ?? ""))}</td>
+      <td>${escapeHtml(String(ln.warehouseBin ?? ""))}</td>
+    `;
+    summaryTableBody.appendChild(tr);
+  }
+}
+
+btnAddMore.addEventListener("click", () => {
+  goScan();
+});
+
+btnDone.addEventListener("click", async () => {
+  if (!taskId) { goStart(); return; }
+
+  btnDone.disabled = true;
+  try {
+    const data = await apiPost({ action: "finishTask", taskId });
+    if (!data.ok) throw new Error(data.error || "finishTask failed");
+
+    // Reset local
+    localStorage.removeItem(LS_TASK_ID);
+    localStorage.removeItem(LS_LAST_BARCODE);
+    taskId = "";
+    setStatus(summaryStatus, "המשימה נסגרה ואופסה ✅", true);
+    goStart();
+  } catch (err) {
+    setStatus(summaryStatus, "שגיאה בסגירת משימה: " + err.message, false);
+  } finally {
+    btnDone.disabled = false;
+  }
+});
+
+/** =======================
+ *  Utils
+ *  ======================= */
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+/** =======================
+ *  Boot
+ *  ======================= */
+(function init() {
+  setTaskLabel(taskId);
+
+  // If task exists, go scan, else start.
+  if (taskId) goScan();
+  else goStart();
+
+  // Keep scanner armed when returning to tab
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && !screenScan.classList.contains("hidden")) {
+      armScanner();
+    }
+  });
+})();
+</script>
+</body>
+</html>
