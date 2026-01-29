@@ -88,6 +88,27 @@
       </div>
 
       <div id="scanStatus" class="status"></div>
+      <!-- NUMPAD (Manual input without phone keyboard) -->
+<div id="numpad" class="hidden" style="margin-top:12px;">
+  <h2>הקלדה ידנית</h2>
+
+  <div style="margin-bottom:10px;" class="muted">
+    הקלד מספרים בעזרת הכפתורים (המקלדת של הטלפון לא תיפתח).
+  </div>
+
+  <div class="grid10" id="padGrid"></div>
+
+  <div class="row" style="margin-top:12px;">
+    <button id="padBack" class="secondary">מחיקה</button>
+    <button id="padClear" class="secondary">נקה</button>
+    <button id="padOk">אישור</button>
+  </div>
+
+  <div class="row" style="margin-top:12px;">
+    <button id="padClose" class="danger">סגור</button>
+  </div>
+</div>
+
 
       <!-- Qty picker -->
       <div id="qtyPanel" class="hidden" style="margin-top:14px;">
@@ -160,6 +181,13 @@ const startStatus = document.getElementById("startStatus");
 
 const barcodeInput = document.getElementById("barcode");
 const btnManual = document.getElementById("btnManual");
+// Numpad elements
+const numpad = document.getElementById("numpad");
+const padGrid = document.getElementById("padGrid");
+const padBack = document.getElementById("padBack");
+const padClear = document.getElementById("padClear");
+const padOk = document.getElementById("padOk");
+const padClose = document.getElementById("padClose");
 const scanStatus = document.getElementById("scanStatus");
 
 const qtyPanel = document.getElementById("qtyPanel");
@@ -208,6 +236,7 @@ function goScan() {
   setMode("סריקה");
   hide(screenStart); show(screenScan); hide(screenSummary);
   hide(qtyPanel);
+  hide(numpad);
   scanStatus.textContent = "";
   scanStatus.className = "status";
   setTaskLabel(taskId);
@@ -241,19 +270,11 @@ function armScanner() {
 
 // Manual keyboard only on demand
 btnManual.addEventListener("click", () => {
-  barcodeInput.readOnly = false;
-  barcodeInput.setAttribute("inputmode", "numeric");
-  barcodeInput.value = "";
-  barcodeInput.focus();
-
-  // After 12s, lock again
-  setTimeout(() => {
-    barcodeInput.blur();
-    barcodeInput.readOnly = true;
-    barcodeInput.setAttribute("inputmode", "none");
-    armScanner();
-  }, 12000);
+  // פותח לוח מספרים פנימי במקום מקלדת של הטלפון
+  show(numpad);
+  buildNumpad();
 });
+
 
 // Capture Enter from scanner
 barcodeInput.addEventListener("keydown", (e) => {
@@ -457,6 +478,47 @@ btnDone.addEventListener("click", async () => {
     btnDone.disabled = false;
   }
 });
+
+  /** =======================
+ *  Numpad (manual input)
+ *  ======================= */
+function buildNumpad() {
+  padGrid.innerHTML = "";
+
+  // בונה כפתורים 1..9 ואז 0
+  for (let i = 1; i <= 9; i++) addPadBtn(String(i));
+  addPadBtn("0");
+
+  function addPadBtn(label) {
+    const b = document.createElement("button");
+    b.textContent = label;
+    b.addEventListener("click", () => {
+      barcodeInput.value = (barcodeInput.value || "") + label;
+    });
+    padGrid.appendChild(b);
+  }
+}
+
+padBack.addEventListener("click", () => {
+  barcodeInput.value = (barcodeInput.value || "").slice(0, -1);
+});
+
+padClear.addEventListener("click", () => {
+  barcodeInput.value = "";
+});
+
+padOk.addEventListener("click", () => {
+  const code = (barcodeInput.value || "").trim();
+  if (!code) return;
+  hide(numpad);
+  onBarcodeScanned(code);
+});
+
+padClose.addEventListener("click", () => {
+  hide(numpad);
+  armScanner();
+});
+
 
 /** =======================
  *  Utils
