@@ -50,6 +50,7 @@
     .summary-sort select { padding: 8px 10px; border-radius: 10px; border: 1px solid #d9dde5; background: #fff; font-size: 14px; }
     .summary-row { cursor: pointer; }
     .summary-row.flagged { background: #ffe3ef; }
+    .summary-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: #0b5; }
     .confirm-overlay {
       position: fixed;
       inset: 0;
@@ -64,6 +65,8 @@
     .confirm-actions { display: flex; gap: 10px; margin-top: 12px; }
     .confirm-actions button { flex: 1; }
     .confirm-actions .confirm-yes { background:#ff5fa2; color:#fff; }
+    .confirm-actions .confirm-yes.confirm-yes-green { background:#6ee7b7; color:#0f5132; }
+    .hidden-column { display: none; }
   </style>
 </head>
 <body>
@@ -170,6 +173,7 @@
         <thead>
           <tr>
             <th>מחסן</th>
+            <th id="checklistHeader" class="hidden-column">צ'קליסט</th>
             <th>מוצר</th>
             <th>כמות</th>
             <th>מדף</th>
@@ -251,6 +255,7 @@ const inventoryConfirm = document.getElementById("inventoryConfirm");
 const inventoryConfirmText = document.getElementById("inventoryConfirmText");
 const inventoryConfirmYes = document.getElementById("inventoryConfirmYes");
 const inventoryConfirmNo = document.getElementById("inventoryConfirmNo");
+const checklistHeader = document.getElementById("checklistHeader");
 
 /** =======================
  *  STATE
@@ -503,6 +508,7 @@ async function openSummary() {
 
 function renderSummary(lines) {
   summaryTableBody.innerHTML = "";
+  const showChecklist = (summarySort?.value || "warehouse") === "warehouse";
   const sorted = sortSummaryLines(lines);
   if (!sorted.length) {
     const tr = document.createElement("tr");
@@ -514,6 +520,7 @@ function renderSummary(lines) {
   sorted.forEach((ln, index) => {
     const inventoryValue = String(ln.inventory ?? "").toUpperCase();
     const isFlagged = inventoryValue === "FALSE";
+    const checklistValue = normalizeChecklist(ln.checklist);
     const tr = document.createElement("tr");
     tr.className = `summary-row${isFlagged ? " flagged" : ""}`;
     tr.tabIndex = 0;
@@ -521,12 +528,25 @@ function renderSummary(lines) {
     tr.dataset.lineId = String(ln.lineId ?? ln.id ?? ln.rowId ?? "");
     tr.dataset.barcode = String(ln.barcode ?? "");
     tr.dataset.inventory = isFlagged ? "FALSE" : "";
+    tr.dataset.checklist = checklistValue ? "TRUE" : "";
     tr.innerHTML = `
       <td>${escapeHtml(String(ln.warehouseBin ?? ""))}</td>
+      <td class="checklist-cell">
+        <input type="checkbox" ${checklistValue ? "checked" : ""} aria-label="צ'קליסט" />
+      </td>
       <td>${escapeHtml(ln.productName || "")}</td>
       <td>${escapeHtml(String(ln.qty ?? ""))}</td>
       <td>${escapeHtml(String(ln.shelf ?? ""))}</td>
     `;
+    const checklistInput = tr.querySelector("input[type=\"checkbox\"]");
+    checklistInput.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+    checklistInput.addEventListener("change", async (event) => {
+      event.stopPropagation();
+      await updateChecklistStatus(tr, ln, event.target.checked);
+      renderSummary(summaryLines);
+    });
     tr.addEventListener("click", () => promptInventoryToggle(tr, ln));
     tr.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
@@ -536,6 +556,7 @@ function renderSummary(lines) {
     });
     summaryTableBody.appendChild(tr);
   });
+  toggleChecklistColumn(showChecklist);
 }
 
 btnAddMore.addEventListener("click", () => {
@@ -643,8 +664,17 @@ function escapeHtml(s) {
 function sortSummaryLines(lines) {
   const sortKey = summarySort?.value || "warehouse";
   const locale = "he";
-  const sorted = [...lines];
+  let filtered = [...lines];
+  if (sortKey === "shelf") {
+    filtered = filtered.filter((line) => normalizeChecklist(line.checklist));
+  }
+  const sorted = [...filtered];
   sorted.sort((a, b) => {
+    if (sortKey === "warehouse") {
+      const aMarked = normalizeChecklist(a.checklist);
+      const bMarked = normalizeChecklist(b.checklist);
+      if (aMarked !== bMarked) return aMarked ? 1 : -1;
+    }
     const aVal = getSortValue(a, sortKey);
     const bVal = getSortValue(b, sortKey);
     return aVal.localeCompare(bVal, locale, { numeric: true, sensitivity: "base" });
@@ -664,15 +694,31 @@ function getSortValue(line, key) {
   }
 }
 
+function toggleChecklistColumn(visible) {
+  if (!checklistHeader) return;
+  checklistHeader.classList.toggle("hidden-column", !visible);
+  const cells = summaryTableBody.querySelectorAll(".checklist-cell");
+  cells.forEach((cell) => cell.classList.toggle("hidden-column", !visible));
+}
+
+function normalizeChecklist(value) {
+  if (value === true) return true;
+  if (value === false) return false;
+  const normalized = String(value ?? "").toUpperCase();
+  return normalized === "TRUE" || normalized === "YES" || normalized === "1" || normalized === "V";
+}
+
 function promptInventoryToggle(rowEl, lineData) {
   const isFlagged = rowEl.dataset.inventory === "FALSE";
   const productName = lineData.productName || "המוצר";
   if (isFlagged) {
     inventoryConfirmText.textContent = `לבטל סימון של "${productName}" כנגמר במלאי?`;
     pendingInventoryToggle = { rowEl, lineData, nextValue: "" };
+    inventoryConfirmYes.classList.add("confirm-yes-green");
   } else {
     inventoryConfirmText.textContent = `לעדכן שהפריט "${productName}" נגמר במחסן?`;
     pendingInventoryToggle = { rowEl, lineData, nextValue: "FALSE" };
+    inventoryConfirmYes.classList.remove("confirm-yes-green");
   }
   show(inventoryConfirm);
 }
@@ -680,18 +726,25 @@ function promptInventoryToggle(rowEl, lineData) {
 async function updateInventoryStatus(rowEl, lineData, value) {
   const lineId = rowEl.dataset.lineId || lineData.lineId || lineData.id || lineData.rowId || "";
   const barcode = rowEl.dataset.barcode || lineData.barcode || "";
-  const lineIndex = rowEl.dataset.index || "";
+  const lineIndex = String(lineData.lineIndex ?? lineData.index ?? rowEl.dataset.index ?? "");
 
   try {
-    const data = await apiPost({
+    const payload = {
       action: "setInventory",
       taskId,
       lineId,
       barcode,
       lineIndex,
-      inventory: value,
-    });
-    if (!data.ok) throw new Error(data.error || "setInventory failed");
+      inventory: value ?? "",
+    };
+    let data = await apiPost(payload);
+    if (!data.ok) {
+      data = await apiPost({ ...payload, action: "updateInventory" });
+    }
+    if (!data.ok) {
+      data = await apiPost({ ...payload, action: "updateLine" });
+    }
+    if (!data.ok) throw new Error(data.error || "inventory update failed");
 
     if (value === "FALSE") {
       rowEl.classList.add("flagged");
@@ -703,6 +756,36 @@ async function updateInventoryStatus(rowEl, lineData, value) {
     lineData.inventory = value;
   } catch (err) {
     setStatus(summaryStatus, "שגיאה בעדכון מלאי: " + err.message, false);
+  }
+}
+
+async function updateChecklistStatus(rowEl, lineData, checked) {
+  const lineId = rowEl.dataset.lineId || lineData.lineId || lineData.id || lineData.rowId || "";
+  const barcode = rowEl.dataset.barcode || lineData.barcode || "";
+  const lineIndex = String(lineData.lineIndex ?? lineData.index ?? rowEl.dataset.index ?? "");
+  const value = checked ? "TRUE" : "";
+
+  try {
+    const payload = {
+      action: "setChecklist",
+      taskId,
+      lineId,
+      barcode,
+      lineIndex,
+      checklist: value,
+    };
+    let data = await apiPost(payload);
+    if (!data.ok) {
+      data = await apiPost({ ...payload, action: "updateChecklist" });
+    }
+    if (!data.ok) {
+      data = await apiPost({ ...payload, action: "updateLine" });
+    }
+    if (!data.ok) throw new Error(data.error || "checklist update failed");
+    lineData.checklist = value;
+    rowEl.dataset.checklist = value ? "TRUE" : "";
+  } catch (err) {
+    setStatus(summaryStatus, "שגיאה בעדכון צ'קליסט: " + err.message, false);
   }
 }
 
