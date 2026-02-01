@@ -76,14 +76,13 @@
     <!-- SCAN -->
     <section id="screenScan" class="card hidden">
       <h1>סריקה</h1>
-      <p class="muted">סרוק ברקוד עם הסורק. השדה נעול כדי לא להקפיץ מקלדת.</p>
+      <p class="muted">סרוק ברקוד עם הסורק. השדה פעיל ומוכן לסריקה.</p>
 
       <div class="row" style="margin-top:12px;">
         <input id="barcode" type="text"
-               inputmode="none"
+               inputmode="text"
                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-               placeholder="סרוק כאן..."
-               readonly />
+               placeholder="סרוק כאן..." />
         <button id="btnManual" class="secondary" style="flex:0 0 160px;">הקלדה ידנית</button>
       </div>
 
@@ -141,10 +140,10 @@
       <table id="summaryTable">
         <thead>
           <tr>
+            <th>מחסן</th>
             <th>מוצר</th>
             <th>כמות</th>
             <th>מדף</th>
-            <th>מחסן</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -260,9 +259,9 @@ function setStatus(el, msg, ok) {
  *  Scanner input behavior
  *  ======================= */
 function armScanner() {
-  // Keep it readonly to avoid keyboard pop
-  barcodeInput.readOnly = true;
-  barcodeInput.setAttribute("inputmode", "none");
+  // Keep it focused so scanner can type immediately
+  barcodeInput.readOnly = false;
+  barcodeInput.setAttribute("inputmode", "text");
   barcodeInput.value = "";
   // focus so scanner can type
   try { barcodeInput.focus({ preventScroll: true }); } catch { barcodeInput.focus(); }
@@ -445,10 +444,10 @@ function renderSummary(lines) {
   for (const ln of lines) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
+      <td>${escapeHtml(String(ln.warehouseBin ?? ""))}</td>
       <td>${escapeHtml(ln.productName || "")}</td>
       <td>${escapeHtml(String(ln.qty ?? ""))}</td>
       <td>${escapeHtml(String(ln.shelf ?? ""))}</td>
-      <td>${escapeHtml(String(ln.warehouseBin ?? ""))}</td>
     `;
     summaryTableBody.appendChild(tr);
   }
