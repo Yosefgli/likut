@@ -506,8 +506,9 @@ function renderSummary(lines) {
   const sorted = sortSummaryLines(lines);
   if (!sorted.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="4" class="muted">אין פריטים במשימה עדיין.</td>`;
+    tr.innerHTML = `<td colspan="${showChecklist ? 5 : 4}" class="muted">אין פריטים במשימה עדיין.</td>`;
     summaryTableBody.appendChild(tr);
+    toggleChecklistColumn(showChecklist);
     return;
   }
   sorted.forEach((ln, index) => {
