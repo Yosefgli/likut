@@ -45,6 +45,25 @@
     .pill { display:inline-block; padding: 4px 8px; border-radius: 999px; background:#eef2ff; font-size: 12px; }
     .topbar { display:flex; justify-content: space-between; align-items:center; gap:10px; margin-bottom: 12px; }
     .topbar .pill { background:#fff; border:1px solid #eee; }
+    .summary-header { display:flex; align-items:center; justify-content: space-between; gap: 12px; }
+    .summary-sort { display:flex; align-items:center; gap: 8px; font-size: 13px; color: #444; }
+    .summary-sort select { padding: 8px 10px; border-radius: 10px; border: 1px solid #d9dde5; background: #fff; font-size: 14px; }
+    .summary-row { cursor: pointer; }
+    .summary-row.flagged { background: #ffe3ef; }
+    .confirm-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 20;
+    }
+    .confirm-card { background: #fff; border-radius: 14px; padding: 16px; width: min(360px, 100%); box-shadow: 0 10px 24px rgba(0,0,0,.18); }
+    .confirm-actions { display: flex; gap: 10px; margin-top: 12px; }
+    .confirm-actions button { flex: 1; }
+    .confirm-actions .confirm-yes { background:#ff5fa2; color:#fff; }
   </style>
 </head>
 <body>
@@ -76,14 +95,13 @@
     <!-- SCAN -->
     <section id="screenScan" class="card hidden">
       <h1>סריקה</h1>
-      <p class="muted">סרוק ברקוד עם הסורק. השדה נעול כדי לא להקפיץ מקלדת.</p>
+      <p class="muted">סרוק ברקוד עם הסורק. השדה פעיל ומוכן לסריקה.</p>
 
       <div class="row" style="margin-top:12px;">
         <input id="barcode" type="text"
-               inputmode="none"
+               inputmode="text"
                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-               placeholder="סרוק כאן..."
-               readonly />
+               placeholder="סרוק כאן..." />
         <button id="btnManual" class="secondary" style="flex:0 0 160px;">הקלדה ידנית</button>
       </div>
 
@@ -128,7 +146,17 @@
 
     <!-- SUMMARY -->
     <section id="screenSummary" class="card hidden">
-      <h1>סיכום פריטים</h1>
+      <div class="summary-header">
+        <h1>סיכום פריטים</h1>
+        <label class="summary-sort">
+          מיון:
+          <select id="summarySort">
+            <option value="warehouse">מחסן</option>
+            <option value="shelf">מדף</option>
+            <option value="product">מוצר</option>
+          </select>
+        </label>
+      </div>
       <p class="muted">פה תראה את כל מה שנסרק במשימה.</p>
 
       <div class="row" style="margin-top:12px;">
@@ -141,14 +169,24 @@
       <table id="summaryTable">
         <thead>
           <tr>
+            <th>מחסן</th>
             <th>מוצר</th>
             <th>כמות</th>
             <th>מדף</th>
-            <th>מחסן</th>
           </tr>
         </thead>
         <tbody></tbody>
       </table>
+
+      <div id="inventoryConfirm" class="confirm-overlay hidden">
+        <div class="confirm-card">
+          <div id="inventoryConfirmText" class="muted"></div>
+          <div class="confirm-actions">
+            <button id="inventoryConfirmYes" class="confirm-yes">כן</button>
+            <button id="inventoryConfirmNo" class="secondary">לא</button>
+          </div>
+        </div>
+      </div>
     </section>
 
   </div>
@@ -163,6 +201,13 @@ const API_URL = "https://script.google.com/macros/s/AKfycbyuK05nXpuQj1n56AaGvEBm
 const LS_TASK_ID = "wh_taskId";
 const LS_CREATED_BY = "wh_createdBy";
 const LS_LAST_BARCODE = "wh_lastBarcode";
+
+function getDateTimeParts() {
+  const now = new Date();
+  const date = now.toISOString().slice(0, 10);
+  const time = now.toTimeString().slice(0, 8);
+  return { date, time };
+}
 
 /** =======================
  *  DOM
@@ -201,6 +246,11 @@ const btnAddMore = document.getElementById("btnAddMore");
 const btnDone = document.getElementById("btnDone");
 const summaryStatus = document.getElementById("summaryStatus");
 const summaryTableBody = document.querySelector("#summaryTable tbody");
+const summarySort = document.getElementById("summarySort");
+const inventoryConfirm = document.getElementById("inventoryConfirm");
+const inventoryConfirmText = document.getElementById("inventoryConfirmText");
+const inventoryConfirmYes = document.getElementById("inventoryConfirmYes");
+const inventoryConfirmNo = document.getElementById("inventoryConfirmNo");
 
 /** =======================
  *  STATE
@@ -208,6 +258,8 @@ const summaryTableBody = document.querySelector("#summaryTable tbody");
 let taskId = localStorage.getItem(LS_TASK_ID) || "";
 let pendingBarcode = "";
 let pendingProduct = null; // from server response
+let summaryLines = [];
+let pendingInventoryToggle = null;
 
 /** =======================
  *  UI helpers
@@ -260,9 +312,9 @@ function setStatus(el, msg, ok) {
  *  Scanner input behavior
  *  ======================= */
 function armScanner() {
-  // Keep it readonly to avoid keyboard pop
-  barcodeInput.readOnly = true;
-  barcodeInput.setAttribute("inputmode", "none");
+  // Keep it focused so scanner can type immediately
+  barcodeInput.readOnly = false;
+  barcodeInput.setAttribute("inputmode", "text");
   barcodeInput.value = "";
   // focus so scanner can type
   try { barcodeInput.focus({ preventScroll: true }); } catch { barcodeInput.focus(); }
@@ -317,7 +369,13 @@ btnStart.addEventListener("click", async () => {
     const createdBy = (createdByInput.value || "").trim() || "unknown";
     localStorage.setItem(LS_CREATED_BY, createdBy);
 
-    const data = await apiPost({ action: "startTask", createdBy });
+    const { date, time } = getDateTimeParts();
+    const data = await apiPost({
+      action: "startTask",
+      createdBy,
+      createdAtDate: date,
+      createdAtTime: time,
+    });
     if (!data.ok) throw new Error(data.error || "startTask failed");
 
     taskId = data.taskId;
@@ -390,7 +448,15 @@ async function pickQty(qty) {
   btnFinishFromScan.disabled = true;
 
   try {
-    const data = await apiPost({ action: "addLine", taskId, barcode: pendingBarcode, qty });
+    const { date, time } = getDateTimeParts();
+    const data = await apiPost({
+      action: "addLine",
+      taskId,
+      barcode: pendingBarcode,
+      qty,
+      scannedAtDate: date,
+      scannedAtTime: time,
+    });
     if (!data.ok) throw new Error(data.error || "addLine failed");
 
     const p = data.product || {};
@@ -427,7 +493,8 @@ async function openSummary() {
     setStatus(scanStatus, "טוען סיכום…", true);
     const data = await apiGet({ action: "getTask", taskId });
     if (!data.ok) throw new Error(data.error || "getTask failed");
-    renderSummary(data.lines || []);
+    summaryLines = Array.isArray(data.lines) ? data.lines : [];
+    renderSummary(summaryLines);
     goSummary();
   } catch (err) {
     setStatus(scanStatus, "שגיאה בטעינת סיכום: " + err.message, false);
@@ -436,22 +503,38 @@ async function openSummary() {
 
 function renderSummary(lines) {
   summaryTableBody.innerHTML = "";
-  if (!lines.length) {
+  const sorted = sortSummaryLines(lines);
+  if (!sorted.length) {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td colspan="4" class="muted">אין פריטים במשימה עדיין.</td>`;
     summaryTableBody.appendChild(tr);
     return;
   }
-  for (const ln of lines) {
+  sorted.forEach((ln, index) => {
+    const inventoryValue = String(ln.inventory ?? "").toUpperCase();
+    const isFlagged = inventoryValue === "FALSE";
     const tr = document.createElement("tr");
+    tr.className = `summary-row${isFlagged ? " flagged" : ""}`;
+    tr.tabIndex = 0;
+    tr.dataset.index = String(ln.lineIndex ?? index);
+    tr.dataset.lineId = String(ln.lineId ?? ln.id ?? ln.rowId ?? "");
+    tr.dataset.barcode = String(ln.barcode ?? "");
+    tr.dataset.inventory = isFlagged ? "FALSE" : "";
     tr.innerHTML = `
+      <td>${escapeHtml(String(ln.warehouseBin ?? ""))}</td>
       <td>${escapeHtml(ln.productName || "")}</td>
       <td>${escapeHtml(String(ln.qty ?? ""))}</td>
       <td>${escapeHtml(String(ln.shelf ?? ""))}</td>
-      <td>${escapeHtml(String(ln.warehouseBin ?? ""))}</td>
     `;
+    tr.addEventListener("click", () => promptInventoryToggle(tr, ln));
+    tr.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        promptInventoryToggle(tr, ln);
+      }
+    });
     summaryTableBody.appendChild(tr);
-  }
+  });
 }
 
 btnAddMore.addEventListener("click", () => {
@@ -519,6 +602,30 @@ padClose.addEventListener("click", () => {
   armScanner();
 });
 
+summarySort.addEventListener("change", () => {
+  renderSummary(summaryLines);
+});
+
+inventoryConfirmNo.addEventListener("click", () => {
+  pendingInventoryToggle = null;
+  hide(inventoryConfirm);
+});
+
+inventoryConfirmYes.addEventListener("click", async () => {
+  if (!pendingInventoryToggle) return;
+  const { rowEl, lineData, nextValue } = pendingInventoryToggle;
+  inventoryConfirmYes.disabled = true;
+  inventoryConfirmNo.disabled = true;
+  try {
+    await updateInventoryStatus(rowEl, lineData, nextValue);
+    hide(inventoryConfirm);
+  } finally {
+    pendingInventoryToggle = null;
+    inventoryConfirmYes.disabled = false;
+    inventoryConfirmNo.disabled = false;
+  }
+});
+
 
 /** =======================
  *  Utils
@@ -530,6 +637,79 @@ function escapeHtml(s) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function sortSummaryLines(lines) {
+  const sortKey = summarySort?.value || "warehouse";
+  const locale = "he";
+  const sorted = [...lines];
+  sorted.sort((a, b) => {
+    const aVal = getSortValue(a, sortKey);
+    const bVal = getSortValue(b, sortKey);
+    return aVal.localeCompare(bVal, locale, { numeric: true, sensitivity: "base" });
+  });
+  return sorted;
+}
+
+function getSortValue(line, key) {
+  switch (key) {
+    case "shelf":
+      return String(line.shelf ?? "");
+    case "product":
+      return String(line.productName ?? "");
+    case "warehouse":
+    default:
+      return String(line.warehouseBin ?? "");
+  }
+}
+
+function promptInventoryToggle(rowEl, lineData) {
+  const isFlagged = rowEl.dataset.inventory === "FALSE";
+  const productName = lineData.productName || "המוצר";
+  if (isFlagged) {
+    inventoryConfirmText.textContent = `לבטל סימון של "${productName}" כנגמר במלאי?`;
+    pendingInventoryToggle = { rowEl, lineData, nextValue: "" };
+  } else {
+    inventoryConfirmText.textContent = `לעדכן שהפריט "${productName}" נגמר במחסן?`;
+    pendingInventoryToggle = { rowEl, lineData, nextValue: "FALSE" };
+  }
+  show(inventoryConfirm);
+}
+
+async function updateInventoryStatus(rowEl, lineData, value) {
+  const lineId = rowEl.dataset.lineId || lineData.lineId || lineData.id || lineData.rowId || "";
+  const barcode = rowEl.dataset.barcode || lineData.barcode || "";
+  const lineIndex = lineData.lineIndex ?? lineData.index ?? rowEl.dataset.index ?? "";
+
+  try {
+    const payload = {
+      action: "setInventory",
+      taskId,
+      lineId,
+      barcode,
+      lineIndex,
+      inventory: value || "",
+    };
+    let data = await apiPost(payload);
+    if (!data.ok) {
+      data = await apiPost({ ...payload, action: "updateInventory" });
+    }
+    if (!data.ok) {
+      data = await apiPost({ ...payload, action: "updateLine" });
+    }
+    if (!data.ok) throw new Error(data.error || "inventory update failed");
+
+    if (value === "FALSE") {
+      rowEl.classList.add("flagged");
+      rowEl.dataset.inventory = "FALSE";
+    } else {
+      rowEl.classList.remove("flagged");
+      rowEl.dataset.inventory = "";
+    }
+    lineData.inventory = value;
+  } catch (err) {
+    setStatus(summaryStatus, "שגיאה בעדכון מלאי: " + err.message, false);
+  }
 }
 
 /** =======================
