@@ -202,6 +202,13 @@ const LS_TASK_ID = "wh_taskId";
 const LS_CREATED_BY = "wh_createdBy";
 const LS_LAST_BARCODE = "wh_lastBarcode";
 
+function getDateTimeParts() {
+  const now = new Date();
+  const date = now.toISOString().slice(0, 10);
+  const time = now.toTimeString().slice(0, 8);
+  return { date, time };
+}
+
 /** =======================
  *  DOM
  *  ======================= */
@@ -362,7 +369,13 @@ btnStart.addEventListener("click", async () => {
     const createdBy = (createdByInput.value || "").trim() || "unknown";
     localStorage.setItem(LS_CREATED_BY, createdBy);
 
-    const data = await apiPost({ action: "startTask", createdBy });
+    const { date, time } = getDateTimeParts();
+    const data = await apiPost({
+      action: "startTask",
+      createdBy,
+      createdAtDate: date,
+      createdAtTime: time,
+    });
     if (!data.ok) throw new Error(data.error || "startTask failed");
 
     taskId = data.taskId;
@@ -435,7 +448,15 @@ async function pickQty(qty) {
   btnFinishFromScan.disabled = true;
 
   try {
-    const data = await apiPost({ action: "addLine", taskId, barcode: pendingBarcode, qty });
+    const { date, time } = getDateTimeParts();
+    const data = await apiPost({
+      action: "addLine",
+      taskId,
+      barcode: pendingBarcode,
+      qty,
+      scannedAtDate: date,
+      scannedAtTime: time,
+    });
     if (!data.ok) throw new Error(data.error || "addLine failed");
 
     const p = data.product || {};
