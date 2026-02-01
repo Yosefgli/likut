@@ -679,25 +679,18 @@ function promptInventoryToggle(rowEl, lineData) {
 async function updateInventoryStatus(rowEl, lineData, value) {
   const lineId = rowEl.dataset.lineId || lineData.lineId || lineData.id || lineData.rowId || "";
   const barcode = rowEl.dataset.barcode || lineData.barcode || "";
-  const lineIndex = String(lineData.lineIndex ?? lineData.index ?? rowEl.dataset.index ?? "");
+  const lineIndex = rowEl.dataset.index || "";
 
   try {
-    const payload = {
+    const data = await apiPost({
       action: "setInventory",
       taskId,
       lineId,
       barcode,
       lineIndex,
-      inventory: value ?? "",
-    };
-    let data = await apiPost(payload);
-    if (!data.ok) {
-      data = await apiPost({ ...payload, action: "updateInventory" });
-    }
-    if (!data.ok) {
-      data = await apiPost({ ...payload, action: "updateLine" });
-    }
-    if (!data.ok) throw new Error(data.error || "inventory update failed");
+      inventory: value,
+    });
+    if (!data.ok) throw new Error(data.error || "setInventory failed");
 
     if (value === "FALSE") {
       rowEl.classList.add("flagged");
