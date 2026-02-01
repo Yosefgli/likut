@@ -679,7 +679,7 @@ function promptInventoryToggle(rowEl, lineData) {
 async function updateInventoryStatus(rowEl, lineData, value) {
   const lineId = rowEl.dataset.lineId || lineData.lineId || lineData.id || lineData.rowId || "";
   const barcode = rowEl.dataset.barcode || lineData.barcode || "";
-  const lineIndex = lineData.lineIndex ?? lineData.index ?? rowEl.dataset.index ?? "";
+  const lineIndex = String(lineData.lineIndex ?? lineData.index ?? rowEl.dataset.index ?? "");
 
   try {
     const payload = {
@@ -688,7 +688,7 @@ async function updateInventoryStatus(rowEl, lineData, value) {
       lineId,
       barcode,
       lineIndex,
-      inventory: value || "",
+      inventory: value ?? "",
     };
     let data = await apiPost(payload);
     if (!data.ok) {
