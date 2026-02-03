@@ -198,6 +198,16 @@
           </div>
         </div>
       </div>
+
+      <div id="finishConfirm" class="confirm-overlay hidden">
+        <div class="confirm-card">
+          <div class="muted">לסיים את המשימה ולאפס?</div>
+          <div class="confirm-actions">
+            <button id="finishConfirmYes" class="danger">סיום</button>
+            <button id="finishConfirmNo" class="secondary">ביטול</button>
+          </div>
+        </div>
+      </div>
     </section>
 
   </div>
@@ -264,6 +274,9 @@ const inventoryConfirmText = document.getElementById("inventoryConfirmText");
 const inventoryConfirmYes = document.getElementById("inventoryConfirmYes");
 const inventoryConfirmNo = document.getElementById("inventoryConfirmNo");
 const checklistHeader = document.getElementById("checklistHeader");
+const finishConfirm = document.getElementById("finishConfirm");
+const finishConfirmYes = document.getElementById("finishConfirmYes");
+const finishConfirmNo = document.getElementById("finishConfirmNo");
 
 /** =======================
  *  STATE
@@ -584,8 +597,18 @@ btnAddMore.addEventListener("click", () => {
 });
 
 btnDone.addEventListener("click", async () => {
+  show(finishConfirm);
+});
+
+finishConfirmNo.addEventListener("click", () => {
+  hide(finishConfirm);
+});
+
+finishConfirmYes.addEventListener("click", async () => {
   if (!taskId) { goStart(); return; }
 
+  finishConfirmYes.disabled = true;
+  finishConfirmNo.disabled = true;
   btnDone.disabled = true;
   try {
     const data = await apiPost({ action: "finishTask", taskId });
@@ -600,6 +623,9 @@ btnDone.addEventListener("click", async () => {
   } catch (err) {
     setStatus(summaryStatus, "שגיאה בסגירת משימה: " + err.message, false);
   } finally {
+    hide(finishConfirm);
+    finishConfirmYes.disabled = false;
+    finishConfirmNo.disabled = false;
     btnDone.disabled = false;
   }
 });
