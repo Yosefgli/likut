@@ -23,6 +23,7 @@
     button.secondary { background:#e9ebef; color:#111; font-weight: 700; }
     button.danger { background:#b00020; }
     button:disabled { opacity: .6; cursor: not-allowed; }
+    button.install { background:#2563eb; }
     input {
       width: 100%;
       box-sizing: border-box;
@@ -90,6 +91,9 @@
       <div class="row" style="margin-top:12px;">
         <button id="btnStart">התחל משימה</button>
         <button id="btnResume" class="secondary">המשך משימה קיימת</button>
+      </div>
+      <div class="row" style="margin-top:12px;">
+        <button id="btnInstall" class="install hidden">התקן כאפליקציה</button>
       </div>
 
       <div id="startStatus" class="status"></div>
@@ -226,6 +230,7 @@ const taskLabel = document.getElementById("taskLabel");
 const createdByInput = document.getElementById("createdBy");
 const btnStart = document.getElementById("btnStart");
 const btnResume = document.getElementById("btnResume");
+const btnInstall = document.getElementById("btnInstall");
 const startStatus = document.getElementById("startStatus");
 
 const barcodeInput = document.getElementById("barcode");
@@ -265,6 +270,7 @@ let pendingBarcode = "";
 let pendingProduct = null; // from server response
 let summaryLines = [];
 let pendingInventoryToggle = null;
+let deferredInstallPrompt = null;
 
 /** =======================
  *  UI helpers
@@ -402,6 +408,17 @@ btnResume.addEventListener("click", async () => {
   }
   setStatus(startStatus, "ממשיך משימה קיימת ✅", true);
   goScan();
+});
+
+btnInstall.addEventListener("click", async () => {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  try {
+    await deferredInstallPrompt.userChoice;
+  } finally {
+    deferredInstallPrompt = null;
+    hide(btnInstall);
+  }
 });
 
 async function onBarcodeScanned(code) {
@@ -806,6 +823,17 @@ async function updateChecklistStatus(rowEl, lineData, checked) {
     }
   });
 })();
+
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  show(btnInstall);
+});
+
+window.addEventListener("appinstalled", () => {
+  deferredInstallPrompt = null;
+  hide(btnInstall);
+});
 </script>
 </body>
 </html>
