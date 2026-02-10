@@ -493,6 +493,26 @@ function resetManualProductForm() {
   manualWarehouse.value = "";
 }
 
+async function trySaveManualLineToSheet({ productName, qty, shelf, warehouseBin }) {
+  const { date, time } = getDateTimeParts();
+  const payload = {
+    action: "updateLine",
+    taskId,
+    lineId: "",
+    lineIndex: "",
+    barcode: "",
+    productName,
+    qty,
+    shelf,
+    warehouseBin,
+    scannedAtDate: date,
+    scannedAtTime: time,
+    inventory: "",
+    checklist: "",
+  };
+  return apiPost(payload);
+}
+
 /** =======================
  *  Flow
  *  ======================= */
@@ -541,12 +561,13 @@ manualCancel.addEventListener("click", () => {
 
 manualSave.addEventListener("click", async () => {
   const productName = (manualProductName.value || "").trim();
-  const qty = Number(manualQty.value || 0);
+  const qtyInput = Number(manualQty.value || 0);
+  const qty = Number.isFinite(qtyInput) && qtyInput > 0 ? qtyInput : 1;
   const shelf = (manualShelf.value || "").trim();
   const warehouseBin = (manualWarehouse.value || "").trim();
 
-  if (!productName || !shelf || !warehouseBin || !Number.isFinite(qty) || qty < 1) {
-    setStatus(scanStatus, "יש למלא שם מוצר, כמות, מדף ומחסן.", false);
+  if (!productName) {
+    setStatus(scanStatus, "יש למלא לפחות שם מוצר.", false);
     return;
   }
 
@@ -554,6 +575,21 @@ manualSave.addEventListener("click", async () => {
   manualCancel.disabled = true;
   try {
     await ensureTaskStarted();
+
+    const saveResult = await trySaveManualLineToSheet({
+      productName,
+      qty,
+      shelf,
+      warehouseBin,
+    });
+
+    if (saveResult?.ok) {
+      hide(manualProductModal);
+      setStatus(scanStatus, "מוצר ידני נוסף ונשמר לשיטס ✅", true);
+      goScan();
+      return;
+    }
+
     const manualLine = {
       manual: true,
       manualId: `manual-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
@@ -571,7 +607,7 @@ manualSave.addEventListener("click", async () => {
     };
     upsertManualLine(taskId, manualLine);
     hide(manualProductModal);
-    setStatus(scanStatus, "מוצר ידני נוסף ✅", true);
+    setStatus(scanStatus, "המוצר נשמר מקומית בלבד (לא נשמר לשיטס).", false);
     goScan();
   } catch (err) {
     setStatus(scanStatus, "שגיאה בהוספה ידנית: " + err.message, false);
