@@ -98,8 +98,24 @@
       <div class="row" style="margin-top:12px;">
         <button id="btnInstall" class="install hidden">התקן כאפליקציה</button>
       </div>
+      <div id="startStatus" class="status"></div>
+    </section>
+
+    <!-- SCAN -->
+    <section id="screenScan" class="card hidden">
+      <h1>סריקה</h1>
+      <p class="muted">סרוק ברקוד עם הסורק. השדה פעיל ומוכן לסריקה.</p>
+
       <div class="row" style="margin-top:12px;">
-        <button id="btnManualProduct" class="secondary">הקלדת מוצר ידנית</button>
+        <input id="barcode" type="text"
+               inputmode="text"
+               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+               placeholder="סרוק כאן..." />
+        <button id="btnManual" class="secondary" style="flex:0 0 160px;">הקלדת ברקוד ידנית</button>
+      </div>
+
+      <div class="row" style="margin-top:12px;">
+        <button id="btnManualProduct" class="secondary">הזנת מוצר ידנית</button>
       </div>
 
       <div id="manualProductModal" class="confirm-overlay hidden">
@@ -118,22 +134,6 @@
             <button id="manualCancel" class="secondary">ביטול</button>
           </div>
         </div>
-      </div>
-
-      <div id="startStatus" class="status"></div>
-    </section>
-
-    <!-- SCAN -->
-    <section id="screenScan" class="card hidden">
-      <h1>סריקה</h1>
-      <p class="muted">סרוק ברקוד עם הסורק. השדה פעיל ומוכן לסריקה.</p>
-
-      <div class="row" style="margin-top:12px;">
-        <input id="barcode" type="text"
-               inputmode="text"
-               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-               placeholder="סרוק כאן..." />
-        <button id="btnManual" class="secondary" style="flex:0 0 160px;">הקלדה ידנית</button>
       </div>
 
       <div id="scanStatus" class="status"></div>
@@ -244,13 +244,6 @@ const LS_TASK_ID = "wh_taskId";
 const LS_CREATED_BY = "wh_createdBy";
 const LS_LAST_BARCODE = "wh_lastBarcode";
 const LS_MANUAL_LINES = "wh_manualLines";
-
-function getDateTimeParts() {
-  const now = new Date();
-  const date = now.toISOString().slice(0, 10);
-  const time = now.toTimeString().slice(0, 8);
-  return { date, time };
-}
 
 function getDateTimeParts() {
   const now = new Date();
@@ -535,7 +528,7 @@ manualSave.addEventListener("click", async () => {
   const warehouseBin = (manualWarehouse.value || "").trim();
 
   if (!productName || !shelf || !warehouseBin || !Number.isFinite(qty) || qty < 1) {
-    setStatus(startStatus, "יש למלא שם מוצר, כמות, מדף ומחסן.", false);
+    setStatus(scanStatus, "יש למלא שם מוצר, כמות, מדף ומחסן.", false);
     return;
   }
 
@@ -560,10 +553,10 @@ manualSave.addEventListener("click", async () => {
     };
     upsertManualLine(taskId, manualLine);
     hide(manualProductModal);
-    setStatus(startStatus, "מוצר ידני נוסף ✅", true);
+    setStatus(scanStatus, "מוצר ידני נוסף ✅", true);
     await openSummary();
   } catch (err) {
-    setStatus(startStatus, "שגיאה בהוספה ידנית: " + err.message, false);
+    setStatus(scanStatus, "שגיאה בהוספה ידנית: " + err.message, false);
   } finally {
     manualSave.disabled = false;
     manualCancel.disabled = false;
