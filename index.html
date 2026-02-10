@@ -55,6 +55,7 @@
     .summary-row { cursor: pointer; }
     .summary-row.flagged { background: #ffe3ef; }
     .summary-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: #0b5; }
+    .qty-cell { text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
     .confirm-overlay {
       position: fixed;
       inset: 0;
@@ -229,6 +230,17 @@
           </div>
         </div>
       </div>
+
+      <div id="qtyEditModal" class="confirm-overlay hidden">
+        <div class="confirm-card">
+          <div id="qtyEditTitle" class="muted">עריכת כמות</div>
+          <input id="qtyEditInput" type="number" min="1" inputmode="numeric" placeholder="כמות חדשה" style="margin-top:10px;" />
+          <div class="confirm-actions">
+            <button id="qtyEditSave">שמור</button>
+            <button id="qtyEditCancel" class="secondary">ביטול</button>
+          </div>
+        </div>
+      </div>
     </section>
 
   </div>
@@ -307,6 +319,11 @@ const checklistHeader = document.getElementById("checklistHeader");
 const finishConfirm = document.getElementById("finishConfirm");
 const finishConfirmYes = document.getElementById("finishConfirmYes");
 const finishConfirmNo = document.getElementById("finishConfirmNo");
+const qtyEditModal = document.getElementById("qtyEditModal");
+const qtyEditTitle = document.getElementById("qtyEditTitle");
+const qtyEditInput = document.getElementById("qtyEditInput");
+const qtyEditSave = document.getElementById("qtyEditSave");
+const qtyEditCancel = document.getElementById("qtyEditCancel");
 
 /** =======================
  *  STATE
@@ -317,6 +334,7 @@ let pendingProduct = null; // from server response
 let summaryLines = [];
 let pendingInventoryToggle = null;
 let deferredInstallPrompt = null;
+let pendingQtyEdit = null;
 
 /** =======================
  *  UI helpers
@@ -554,7 +572,7 @@ manualSave.addEventListener("click", async () => {
     upsertManualLine(taskId, manualLine);
     hide(manualProductModal);
     setStatus(scanStatus, "מוצר ידני נוסף ✅", true);
-    await openSummary();
+    goScan();
   } catch (err) {
     setStatus(scanStatus, "שגיאה בהוספה ידנית: " + err.message, false);
   } finally {
@@ -696,7 +714,7 @@ function renderSummary(lines) {
         <input type="checkbox" ${checklistValue ? "checked" : ""} aria-label="צ'קליסט" />
       </td>
       <td>${escapeHtml(ln.productName || "")}</td>
-      <td>${escapeHtml(String(ln.qty ?? ""))}</td>
+      <td class="qty-cell">${escapeHtml(String(ln.qty ?? ""))}</td>
       <td>${escapeHtml(String(ln.shelf ?? ""))}</td>
     `;
     const checklistInput = tr.querySelector("input[type=\"checkbox\"]");
@@ -707,6 +725,11 @@ function renderSummary(lines) {
       event.stopPropagation();
       await updateChecklistStatus(tr, ln, event.target.checked);
       renderSummary(summaryLines);
+    });
+    const qtyCell = tr.querySelector(".qty-cell");
+    qtyCell.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openQtyEditModal(ln);
     });
     tr.addEventListener("click", () => promptInventoryToggle(tr, ln));
     tr.addEventListener("keydown", (event) => {
@@ -730,6 +753,33 @@ btnDone.addEventListener("click", async () => {
 
 finishConfirmNo.addEventListener("click", () => {
   hide(finishConfirm);
+});
+
+qtyEditCancel.addEventListener("click", () => {
+  pendingQtyEdit = null;
+  hide(qtyEditModal);
+});
+
+qtyEditSave.addEventListener("click", async () => {
+  if (!pendingQtyEdit) return;
+  const newQty = Number(qtyEditInput.value || 0);
+  if (!Number.isFinite(newQty) || newQty < 1) {
+    setStatus(summaryStatus, "כמות חייבת להיות מספר גדול מ-0", false);
+    return;
+  }
+  qtyEditSave.disabled = true;
+  qtyEditCancel.disabled = true;
+  try {
+    await updateQtyForLine(pendingQtyEdit, newQty);
+    pendingQtyEdit = null;
+    hide(qtyEditModal);
+    renderSummary(summaryLines);
+  } catch (err) {
+    setStatus(summaryStatus, "שגיאה בעדכון כמות: " + err.message, false);
+  } finally {
+    qtyEditSave.disabled = false;
+    qtyEditCancel.disabled = false;
+  }
 });
 
 finishConfirmYes.addEventListener("click", async () => {
@@ -881,6 +931,44 @@ function normalizeChecklist(value) {
   if (value === false) return false;
   const normalized = String(value ?? "").toUpperCase();
   return normalized === "TRUE" || normalized === "YES" || normalized === "1" || normalized === "V";
+}
+
+function openQtyEditModal(lineData) {
+  pendingQtyEdit = lineData;
+  qtyEditTitle.textContent = `עריכת כמות עבור: ${lineData.productName || "מוצר"}`;
+  qtyEditInput.value = String(lineData.qty ?? "");
+  show(qtyEditModal);
+  try { qtyEditInput.focus({ preventScroll: true }); } catch { qtyEditInput.focus(); }
+}
+
+async function updateQtyForLine(lineData, qty) {
+  if (lineData.manual) {
+    lineData.qty = qty;
+    upsertManualLine(taskId, lineData);
+    setStatus(summaryStatus, "כמות עודכנה ✅", true);
+    return;
+  }
+
+  const lineId = String(lineData.lineId || lineData.id || lineData.rowId || "");
+  const barcode = String(lineData.barcode || "");
+  const lineIndex = String(lineData.lineIndex ?? lineData.index ?? "");
+
+  const payload = {
+    action: "updateLine",
+    taskId,
+    lineId,
+    barcode,
+    lineIndex,
+    qty,
+  };
+
+  let data = await apiPost(payload);
+  if (!data.ok) data = await apiPost({ ...payload, action: "setQty" });
+  if (!data.ok) data = await apiPost({ ...payload, action: "updateQty" });
+  if (!data.ok) throw new Error(data.error || "qty update failed");
+
+  lineData.qty = qty;
+  setStatus(summaryStatus, "כמות עודכנה ✅", true);
 }
 
 function promptInventoryToggle(rowEl, lineData) {
