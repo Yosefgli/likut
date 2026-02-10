@@ -98,6 +98,27 @@
       <div class="row" style="margin-top:12px;">
         <button id="btnInstall" class="install hidden">התקן כאפליקציה</button>
       </div>
+      <div class="row" style="margin-top:12px;">
+        <button id="btnManualProduct" class="secondary">הקלדת מוצר ידנית</button>
+      </div>
+
+      <div id="manualProductModal" class="confirm-overlay hidden">
+        <div class="confirm-card">
+          <h2>הוספת מוצר ידנית</h2>
+          <div style="margin-top:10px;" class="muted">שם מוצר</div>
+          <input id="manualProductName" type="text" autocomplete="off" placeholder="שם מוצר" />
+          <div style="margin-top:10px;" class="muted">כמות</div>
+          <input id="manualQty" type="number" min="1" max="999" inputmode="numeric" placeholder="כמות" />
+          <div style="margin-top:10px;" class="muted">מדף</div>
+          <input id="manualShelf" type="text" autocomplete="off" placeholder="מדף" />
+          <div style="margin-top:10px;" class="muted">מחסן</div>
+          <input id="manualWarehouse" type="text" autocomplete="off" placeholder="מחסן" />
+          <div class="confirm-actions">
+            <button id="manualSave">אישור</button>
+            <button id="manualCancel" class="secondary">ביטול</button>
+          </div>
+        </div>
+      </div>
 
       <div id="startStatus" class="status"></div>
     </section>
@@ -222,6 +243,14 @@ const API_URL = "https://script.google.com/macros/s/AKfycbyuK05nXpuQj1n56AaGvEBm
 const LS_TASK_ID = "wh_taskId";
 const LS_CREATED_BY = "wh_createdBy";
 const LS_LAST_BARCODE = "wh_lastBarcode";
+const LS_MANUAL_LINES = "wh_manualLines";
+
+function getDateTimeParts() {
+  const now = new Date();
+  const date = now.toISOString().slice(0, 10);
+  const time = now.toTimeString().slice(0, 8);
+  return { date, time };
+}
 
 function getDateTimeParts() {
   const now = new Date();
@@ -244,6 +273,14 @@ const createdByInput = document.getElementById("createdBy");
 const btnStart = document.getElementById("btnStart");
 const btnResume = document.getElementById("btnResume");
 const btnInstall = document.getElementById("btnInstall");
+const btnManualProduct = document.getElementById("btnManualProduct");
+const manualProductModal = document.getElementById("manualProductModal");
+const manualProductName = document.getElementById("manualProductName");
+const manualQty = document.getElementById("manualQty");
+const manualShelf = document.getElementById("manualShelf");
+const manualWarehouse = document.getElementById("manualWarehouse");
+const manualSave = document.getElementById("manualSave");
+const manualCancel = document.getElementById("manualCancel");
 const startStatus = document.getElementById("startStatus");
 
 const barcodeInput = document.getElementById("barcode");
@@ -387,26 +424,71 @@ async function apiGet(params) {
   return res.json();
 }
 
+function loadManualLinesMap() {
+  try {
+    return JSON.parse(localStorage.getItem(LS_MANUAL_LINES) || "{}") || {};
+  } catch {
+    return {};
+  }
+}
+
+function getManualLines(taskIdValue) {
+  const all = loadManualLinesMap();
+  return Array.isArray(all[taskIdValue]) ? all[taskIdValue] : [];
+}
+
+function saveManualLines(taskIdValue, lines) {
+  const all = loadManualLinesMap();
+  all[taskIdValue] = lines;
+  localStorage.setItem(LS_MANUAL_LINES, JSON.stringify(all));
+}
+
+function upsertManualLine(taskIdValue, line) {
+  const lines = getManualLines(taskIdValue);
+  const idx = lines.findIndex((x) => x.manualId === line.manualId);
+  if (idx >= 0) lines[idx] = line;
+  else lines.push(line);
+  saveManualLines(taskIdValue, lines);
+}
+
+function removeTaskManualLines(taskIdValue) {
+  const all = loadManualLinesMap();
+  delete all[taskIdValue];
+  localStorage.setItem(LS_MANUAL_LINES, JSON.stringify(all));
+}
+
+async function ensureTaskStarted() {
+  if (taskId) return taskId;
+  const createdBy = (createdByInput.value || "").trim() || "unknown";
+  localStorage.setItem(LS_CREATED_BY, createdBy);
+  const { date, time } = getDateTimeParts();
+  const data = await apiPost({
+    action: "startTask",
+    createdBy,
+    createdAtDate: date,
+    createdAtTime: time,
+  });
+  if (!data.ok) throw new Error(data.error || "startTask failed");
+  taskId = data.taskId;
+  localStorage.setItem(LS_TASK_ID, taskId);
+  setTaskLabel(taskId);
+  return taskId;
+}
+
+function resetManualProductForm() {
+  manualProductName.value = "";
+  manualQty.value = "";
+  manualShelf.value = "";
+  manualWarehouse.value = "";
+}
+
 /** =======================
  *  Flow
  *  ======================= */
 btnStart.addEventListener("click", async () => {
   btnStart.disabled = true;
   try {
-    const createdBy = (createdByInput.value || "").trim() || "unknown";
-    localStorage.setItem(LS_CREATED_BY, createdBy);
-
-    const { date, time } = getDateTimeParts();
-    const data = await apiPost({
-      action: "startTask",
-      createdBy,
-      createdAtDate: date,
-      createdAtTime: time,
-    });
-    if (!data.ok) throw new Error(data.error || "startTask failed");
-
-    taskId = data.taskId;
-    localStorage.setItem(LS_TASK_ID, taskId);
+    await ensureTaskStarted();
     setStatus(startStatus, "משימה נפתחה ✅", true);
     goScan();
   } catch (err) {
@@ -434,6 +516,57 @@ btnInstall.addEventListener("click", async () => {
   } finally {
     deferredInstallPrompt = null;
     hide(btnInstall);
+  }
+});
+
+btnManualProduct.addEventListener("click", () => {
+  resetManualProductForm();
+  show(manualProductModal);
+});
+
+manualCancel.addEventListener("click", () => {
+  hide(manualProductModal);
+});
+
+manualSave.addEventListener("click", async () => {
+  const productName = (manualProductName.value || "").trim();
+  const qty = Number(manualQty.value || 0);
+  const shelf = (manualShelf.value || "").trim();
+  const warehouseBin = (manualWarehouse.value || "").trim();
+
+  if (!productName || !shelf || !warehouseBin || !Number.isFinite(qty) || qty < 1) {
+    setStatus(startStatus, "יש למלא שם מוצר, כמות, מדף ומחסן.", false);
+    return;
+  }
+
+  manualSave.disabled = true;
+  manualCancel.disabled = true;
+  try {
+    await ensureTaskStarted();
+    const manualLine = {
+      manual: true,
+      manualId: `manual-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      taskId,
+      lineIndex: `manual-${Date.now()}`,
+      lineId: "",
+      barcode: "",
+      productName,
+      qty,
+      shelf,
+      warehouseBin,
+      scannedAt: new Date().toISOString(),
+      inventory: "",
+      checklist: "",
+    };
+    upsertManualLine(taskId, manualLine);
+    hide(manualProductModal);
+    setStatus(startStatus, "מוצר ידני נוסף ✅", true);
+    await openSummary();
+  } catch (err) {
+    setStatus(startStatus, "שגיאה בהוספה ידנית: " + err.message, false);
+  } finally {
+    manualSave.disabled = false;
+    manualCancel.disabled = false;
   }
 });
 
@@ -531,7 +664,9 @@ async function openSummary() {
     setStatus(scanStatus, "טוען סיכום…", true);
     const data = await apiGet({ action: "getTask", taskId });
     if (!data.ok) throw new Error(data.error || "getTask failed");
-    summaryLines = Array.isArray(data.lines) ? data.lines : [];
+    const apiLines = Array.isArray(data.lines) ? data.lines : [];
+    const manualLines = getManualLines(taskId);
+    summaryLines = [...apiLines, ...manualLines];
     renderSummary(summaryLines);
     goSummary();
   } catch (err) {
@@ -615,6 +750,7 @@ finishConfirmYes.addEventListener("click", async () => {
     if (!data.ok) throw new Error(data.error || "finishTask failed");
 
     // Reset local
+    removeTaskManualLines(taskId);
     localStorage.removeItem(LS_TASK_ID);
     localStorage.removeItem(LS_LAST_BARCODE);
     taskId = "";
@@ -774,6 +910,19 @@ async function updateInventoryStatus(rowEl, lineData, value) {
   const barcode = rowEl.dataset.barcode || lineData.barcode || "";
   const lineIndex = String(lineData.lineIndex ?? lineData.index ?? rowEl.dataset.index ?? "");
 
+  if (lineData.manual) {
+    if (value === "FALSE") {
+      rowEl.classList.add("flagged");
+      rowEl.dataset.inventory = "FALSE";
+    } else {
+      rowEl.classList.remove("flagged");
+      rowEl.dataset.inventory = "";
+    }
+    lineData.inventory = value;
+    upsertManualLine(taskId, lineData);
+    return;
+  }
+
   try {
     const payload = {
       action: "setInventory",
@@ -810,6 +959,13 @@ async function updateChecklistStatus(rowEl, lineData, checked) {
   const barcode = rowEl.dataset.barcode || lineData.barcode || "";
   const lineIndex = String(lineData.lineIndex ?? lineData.index ?? rowEl.dataset.index ?? "");
   const value = checked ? "TRUE" : "";
+
+  if (lineData.manual) {
+    lineData.checklist = value;
+    rowEl.dataset.checklist = value ? "TRUE" : "";
+    upsertManualLine(taskId, lineData);
+    return;
+  }
 
   try {
     const payload = {
