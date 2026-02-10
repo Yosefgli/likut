@@ -576,38 +576,42 @@ manualSave.addEventListener("click", async () => {
   try {
     await ensureTaskStarted();
 
-    const saveResult = await trySaveManualLineToSheet({
-      productName,
-      qty,
-      shelf,
-      warehouseBin,
-    });
-
-    if (saveResult?.ok) {
-      hide(manualProductModal);
-      setStatus(scanStatus, "מוצר ידני נוסף ונשמר לשיטס ✅", true);
-      goScan();
-      return;
+    let savedToSheet = false;
+    try {
+      const saveResult = await trySaveManualLineToSheet({
+        productName,
+        qty,
+        shelf,
+        warehouseBin,
+      });
+      savedToSheet = !!saveResult?.ok;
+    } catch {
+      savedToSheet = false;
     }
 
-    const manualLine = {
-      manual: true,
-      manualId: `manual-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-      taskId,
-      lineIndex: `manual-${Date.now()}`,
-      lineId: "",
-      barcode: "",
-      productName,
-      qty,
-      shelf,
-      warehouseBin,
-      scannedAt: new Date().toISOString(),
-      inventory: "",
-      checklist: "",
-    };
-    upsertManualLine(taskId, manualLine);
+    if (!savedToSheet) {
+      const manualLine = {
+        manual: true,
+        manualId: `manual-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+        taskId,
+        lineIndex: `manual-${Date.now()}`,
+        lineId: "",
+        barcode: "",
+        productName,
+        qty,
+        shelf,
+        warehouseBin,
+        scannedAt: new Date().toISOString(),
+        inventory: "",
+        checklist: "",
+      };
+      upsertManualLine(taskId, manualLine);
+      setStatus(scanStatus, "המוצר נשמר מקומית (השרת לא קיבל שמירה ידנית).", false);
+    } else {
+      setStatus(scanStatus, "מוצר ידני נוסף ונשמר לשיטס ✅", true);
+    }
+
     hide(manualProductModal);
-    setStatus(scanStatus, "המוצר נשמר מקומית בלבד (לא נשמר לשיטס).", false);
     goScan();
   } catch (err) {
     setStatus(scanStatus, "שגיאה בהוספה ידנית: " + err.message, false);
