@@ -576,45 +576,26 @@ manualSave.addEventListener("click", async () => {
   try {
     await ensureTaskStarted();
 
-    let savedToSheet = false;
-    try {
-      const saveResult = await trySaveManualLineToSheet({
-        productName,
-        qty,
-        shelf,
-        warehouseBin,
-      });
-      savedToSheet = !!saveResult?.ok;
-    } catch {
-      savedToSheet = false;
-    }
+    const saveResult = await trySaveManualLineToSheet({
+      productName,
+      qty,
+      shelf,
+      warehouseBin,
+    });
 
-    if (!savedToSheet) {
-      const manualLine = {
-        manual: true,
-        manualId: `manual-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-        taskId,
-        lineIndex: `manual-${Date.now()}`,
-        lineId: "",
-        barcode: "",
-        productName,
-        qty,
-        shelf,
-        warehouseBin,
-        scannedAt: new Date().toISOString(),
-        inventory: "",
-        checklist: "",
-      };
-      upsertManualLine(taskId, manualLine);
-      setStatus(scanStatus, "המוצר נשמר מקומית (השרת לא קיבל שמירה ידנית).", false);
-    } else {
-      setStatus(scanStatus, "מוצר ידני נוסף ונשמר לשיטס ✅", true);
+    if (!saveResult?.ok) {
+      throw new Error(saveResult?.error || "שמירה ידנית נכשלה");
     }
 
     hide(manualProductModal);
+    setStatus(scanStatus, "מוצר ידני נוסף ונשמר לשיטס ✅", true);
     goScan();
   } catch (err) {
-    setStatus(scanStatus, "שגיאה בהוספה ידנית: " + err.message, false);
+    const msg = String(err?.message || err || "");
+    const hint = msg.toLowerCase().includes("unknown action")
+      ? " (נראה שב־Apps Script חסרה פעולה לשמירת מוצר ידני ללא ברקוד)"
+      : "";
+    setStatus(scanStatus, "שגיאה בהוספה ידנית: " + msg + hint, false);
   } finally {
     manualSave.disabled = false;
     manualCancel.disabled = false;
