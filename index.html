@@ -419,20 +419,105 @@ barcodeInput.addEventListener("keydown", (e) => {
  *  ======================= */
 // NOTE: Apps Script sometimes expects text/plain for JSON.
 async function apiPost(payload) {
-  const res = await fetch(API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify(payload),
-  });
-  // If CORS blocks, you'll see a network error.
-  return res.json();
+  try {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload),
+    });
+    return res.json();
+  } catch (err) {
+    throw new Error("חסימת רשת/CORS מול Apps Script. צריך לאפשר גישה מהדומיין הזה או להשתמש בפרוקסי.");
+  }
 }
 
 async function apiGet(params) {
   const url = new URL(API_URL);
   Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, v));
-  const res = await fetch(url.toString(), { method: "GET" });
-  return res.json();
+  try {
+    const res = await fetch(url.toString(), { method: "GET" });
+    return res.json();
+  } catch (err) {
+    throw new Error("חסימת רשת/CORS מול Apps Script. צריך לאפשר גישה מהדומיין הזה או להשתמש בפרוקסי.");
+  }
+}
+
+function loadManualLinesMap() {
+  try {
+    return JSON.parse(localStorage.getItem(LS_MANUAL_LINES) || "{}") || {};
+  } catch {
+    return {};
+  }
+}
+
+function getManualLines(taskIdValue) {
+  const all = loadManualLinesMap();
+  return Array.isArray(all[taskIdValue]) ? all[taskIdValue] : [];
+}
+
+function saveManualLines(taskIdValue, lines) {
+  const all = loadManualLinesMap();
+  all[taskIdValue] = lines;
+  localStorage.setItem(LS_MANUAL_LINES, JSON.stringify(all));
+}
+
+function upsertManualLine(taskIdValue, line) {
+  const lines = getManualLines(taskIdValue);
+  const idx = lines.findIndex((x) => x.manualId === line.manualId);
+  if (idx >= 0) lines[idx] = line;
+  else lines.push(line);
+  saveManualLines(taskIdValue, lines);
+}
+
+function removeTaskManualLines(taskIdValue) {
+  const all = loadManualLinesMap();
+  delete all[taskIdValue];
+  localStorage.setItem(LS_MANUAL_LINES, JSON.stringify(all));
+}
+
+async function ensureTaskStarted() {
+  if (taskId) return taskId;
+  const createdBy = (createdByInput.value || "").trim() || "unknown";
+  localStorage.setItem(LS_CREATED_BY, createdBy);
+  const { date, time } = getDateTimeParts();
+  const data = await apiPost({
+    action: "startTask",
+    createdBy,
+    createdAtDate: date,
+    createdAtTime: time,
+  });
+  if (!data.ok) throw new Error(data.error || "startTask failed");
+  taskId = data.taskId;
+  localStorage.setItem(LS_TASK_ID, taskId);
+  setTaskLabel(taskId);
+  return taskId;
+}
+
+function resetManualProductForm() {
+  manualProductName.value = "";
+  manualQty.value = "";
+  manualShelf.value = "";
+  manualWarehouse.value = "";
+}
+
+async function trySaveManualLineToSheet({ productName, qty, shelf, warehouseBin }) {
+  const { date, time } = getDateTimeParts();
+  const payload = {
+    action: "updateLine",
+    taskId,
+    lineId: "",
+    lineIndex: "",
+    barcode: "",
+    productName,
+    qty,
+    shelf,
+    warehouseBin,
+    scannedAtDate: date,
+    scannedAtTime: time,
+    inventory: "",
+    checklist: "",
+  };
+  return apiPost(payload);
 }
 
 function loadManualLinesMap() {
